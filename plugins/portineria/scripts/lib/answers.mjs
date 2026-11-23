@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { escapeRe, fmtNum, truncate } from './text.mjs';
 import {
-  git, gitRoot, projectRoot, listFiles, grepWord, grepRegex, isTestPath, readJson, readText, exists,
+  run, git, gitRoot, projectRoot, listFiles, grepWord, grepRegex, isTestPath, readJson, readText, exists,
 } from './repo.mjs';
 import { sessionTotals } from './tokens.mjs';
 import { readStats } from './store.mjs';
@@ -288,9 +288,46 @@ function commitLines(root, L, { n = 10, since, until } = {}) {
   });
 }
 
+// Domanda su git ma niente repository: si spiega il perché, sempre a 0 token.
+// Se la causa non è chiara, null: la domanda passa a Claude.
+function noRepo(ctx) {
+  const L = ctx.lang;
+  const where = path.resolve(ctx.cwd);
+  const r = run('git', ['rev-parse', '--show-toplevel'], where, { timeout: 2000 });
+  if (r.ok) return null;
+  if (/ENOENT/.test(r.err)) {
+    return t(L,
+      'Git non risulta installato su questo computer (o non è nel PATH), quindi non posso leggere commit, branch o modifiche.',
+      "Git doesn't seem to be installed on this computer (or isn't on the PATH), so I can't read commits, branches or changes.");
+  }
+  if (/dubious ownership/i.test(r.err)) {
+    return t(L, [
+      'Questa cartella è un repository git, ma git la blocca perché appartiene a un altro utente del computer.',
+      'Se ti fidi della cartella, sbloccala con:',
+      `  git config --global --add safe.directory "${where.replace(/\\/g, '/')}"`,
+    ].join('\n'), [
+      "This folder is a git repository, but git blocks it because it's owned by another user on this computer.",
+      'If you trust the folder, unlock it with:',
+      `  git config --global --add safe.directory "${where.replace(/\\/g, '/')}"`,
+    ].join('\n'));
+  }
+  if (/not a git repository/i.test(r.err)) {
+    return t(L, [
+      'Questa cartella non è un repository git: non ci sono commit, branch o modifiche da mostrare.',
+      `  Cartella: ${where}`,
+      'Se il progetto è in un\'altra cartella, apri Claude Code lì. Per iniziare a tracciare questa:  git init',
+    ].join('\n'), [
+      'This folder is not a git repository: there are no commits, branches or changes to show.',
+      `  Folder: ${where}`,
+      'If your project lives elsewhere, open Claude Code there. To start tracking this one:  git init',
+    ].join('\n'));
+  }
+  return null;
+}
+
 function answerStatus(params, ctx) {
   const root = gitRoot(ctx.cwd);
-  if (!root) return null;
+  if (!root) return noRepo(ctx);
   const L = ctx.lang;
   const st = git(['status', '--porcelain=v1', '--branch'], root);
   if (!st.ok) return null;
@@ -340,23 +377,40 @@ function answerStatus(params, ctx) {
 
 function answerCommits(params, ctx) {
   const root = gitRoot(ctx.cwd);
-  if (!root || !git(['rev-parse', '--verify', '-q', 'HEAD'], root).ok) return null;
+  if (!root) return noRepo(ctx);
   const L = ctx.lang;
+  if (!git(['rev-parse', '--verify', '-q', 'HEAD'], root).ok) {
+    return t(L, 'Il repository non ha ancora nessun commit.', 'This repository has no commits yet.');
+  }
   const n = Math.min(Math.max(params.n || 10, 1), 30);
   let opts = { n };
-  let title = t(L, `Ultimi ${n} commit:`, `Last ${n} commits:`);
-  if (params.when && /oggi|today/i.test(params.when)) { opts = { n: 50, since: 'midnight' }; title = t(L, 'Commit di oggi:', "Today's commits:"); }
-  if (params.when && /ieri|yesterday/i.test(params.when)) { opts = { n: 50, since: 'yesterday.midnight', until: 'midnight' }; title = t(L, 'Commit di ieri:', "Yesterday's commits:"); }
+  let period = null;
+  if (params.when && /oggi|today/i.test(params.when)) { opts = { n: 50, since: 'midnight' }; period = t(L, 'Commit di oggi', "Today's commits"); }
+  if (params.when && /ieri|yesterday/i.test(params.when)) { opts = { n: 50, since: 'yesterday.midnight', until: 'midnight' }; period = t(L, 'Commit di ieri', "Yesterday's commits"); }
   const lines = commitLines(root, L, opts);
   if (!lines) return null;
   if (!lines.length) return t(L, 'Nessun commit nel periodo richiesto.', 'No commits in that period.');
-  if (n === 1 && !params.when) title = t(L, 'Ultimo commit:', 'Last commit:');
+  const total = Number(git(['rev-list', '--count', 'HEAD'], root).out.trim()) || 0;
+  const k = lines.length;
+  let title;
+  if (period) title = `${period} (${k}):`;
+  else if (total && k >= total) {
+    title = total === 1
+      ? t(L, "L'unico commit finora:", 'The only commit so far:')
+      : t(L, `Tutti i commit finora (${fmtNum(total, L)}):`, `All commits so far (${fmtNum(total, 'en')}):`);
+  } else if (total) {
+    title = k === 1
+      ? t(L, `Ultimo commit (su ${fmtNum(total, L)} in totale):`, `Last commit (of ${fmtNum(total, 'en')} in total):`)
+      : t(L, `Ultimi ${k} commit (su ${fmtNum(total, L)} in totale):`, `Last ${k} commits (of ${fmtNum(total, 'en')} in total):`);
+  } else {
+    title = k === 1 ? t(L, 'Ultimo commit:', 'Last commit:') : t(L, `Ultimi ${k} commit:`, `Last ${k} commits:`);
+  }
   return [title, ...lines].join('\n');
 }
 
 function answerBranch(_params, ctx) {
   const root = gitRoot(ctx.cwd);
-  if (!root) return null;
+  if (!root) return noRepo(ctx);
   const L = ctx.lang;
   let name = git(['branch', '--show-current'], root).out.trim();
   if (!name) {
@@ -379,7 +433,7 @@ function answerBranch(_params, ctx) {
 
 function answerBranches(_params, ctx) {
   const root = gitRoot(ctx.cwd);
-  if (!root) return null;
+  if (!root) return noRepo(ctx);
   const L = ctx.lang;
   const r = git(['for-each-ref', '--sort=-committerdate', 'refs/heads', '--format=%(HEAD)%00%(refname:short)%00%(committerdate:relative)'], root);
   if (!r.ok) return null;

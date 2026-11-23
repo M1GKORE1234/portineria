@@ -1,7 +1,7 @@
 {
   "name": "portineria",
   "displayName": "Portineria",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Risponde in locale, a 0 token, alle domande che non hanno bisogno di Claude (dov'è definita una funzione, comando dei test, cosa ho cambiato, ultimi commit, TODO, versioni). Tutto il resto passa a Claude come sempre.",
   "author": {
     "name": "Alessio Kore"

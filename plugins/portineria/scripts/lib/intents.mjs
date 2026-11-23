@@ -169,6 +169,8 @@ export function detect(prompt, { forced = false } = {}) {
       if (g.verb) params.verb = g.verb;
       if (g.when) params.when = g.when.trim();
       if (g.n) params.n = Number(g.n);
+      // "ultimo commit" / "last commit" al singolare: uno solo, non dieci.
+      if (d.intent === 'commits' && !g.n && /\b(?:ultimo|last|latest)\s+commit\b(?!s)/i.test(text)) params.n = 1;
       if (g.pkg) params.pkg = g.pkg;
       if (d.intent === 'tokens' || d.intent === 'tree') params.text = text;
       candidates.push({ intent: d.intent, lang: d.lang, params });

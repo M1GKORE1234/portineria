@@ -172,8 +172,42 @@ test('senza trascrizione e fuori da git funziona lo stesso', () => {
   const r = ask("dov'è definita sumAll?", { cwd: plain, transcript: null });
   assert.match(r, /lib\/math\.js:1/);
   assert.match(r, /Claude non è stato interpellato\./);
-  assert.equal(ask('cosa ho cambiato?', { cwd: plain, transcript: null }), null);
   assert.match(ask('elenca i todo', { cwd: plain, transcript: null }), /lib\/math\.js:2/);
+});
+
+test('fuori da git: le domande su git ricevono una spiegazione, a 0 token', () => {
+  const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'portineria-nogit-'));
+  for (const q of ['cosa ho cambiato?', 'ultimi commit', 'su che branch sono?', 'quali branch ci sono']) {
+    const r = ask(q, { cwd: plain, transcript: null });
+    assert.match(r, /0 token/, q);
+    assert.match(r, /non è un repository git/, q);
+  }
+  assert.match(ask('last commits', { cwd: plain, transcript: null }), /not a git repository/);
+  // Git non installato: lo dice, invece di dire che la cartella non è un repo.
+  assert.match(ask('ultimi commit', { cwd: plain, transcript: null, env: { PATH: '/nonexistent' } }), /Git non risulta installato/);
+});
+
+test('titolo dei commit: conta quelli veri', () => {
+  // Il progetto di prova ha 2 commit.
+  assert.match(ask('ultimi commit'), /^Tutti i commit finora \(2\):$/m);
+  assert.match(ask('ultimi 10 commit'), /^Tutti i commit finora \(2\):$/m);
+  const one = ask('ultimo commit');
+  assert.match(one, /^Ultimo commit \(su 2 in totale\):$/m);
+  assert.match(one, /Aggiunge PAGE_SIZE/);
+  assert.doesNotMatch(one, /Primo commit/);
+  assert.match(ask('last commit'), /^Last commit \(of 2 in total\):$/m);
+
+  // Repo con un solo commit.
+  const single = fs.mkdtempSync(path.join(os.tmpdir(), 'portineria-one-'));
+  const g = (...a) => spawnSync('git', a, { cwd: single, encoding: 'utf8' });
+  g('init', '-q', '-b', 'main');
+  assert.match(ask('ultimi commit', { cwd: single, transcript: null }), /ancora nessun commit/);
+  fs.writeFileSync(path.join(single, 'a.txt'), 'a\n');
+  g('add', '.');
+  g('-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'Unico');
+  const r = ask('ultimi commit', { cwd: single, transcript: null });
+  assert.match(r, /^L'unico commit finora:$/m);
+  assert.doesNotMatch(r, /Ultimi 10/);
 });
 
 test('input non valido o vuoto: nessun output, uscita 0', () => {
