@@ -1,0 +1,11 @@
+{
+  "name": "portineria-marketplace",
+  "private": true,
+  "description": "Marketplace e sorgente del plugin Portineria per Claude Code",
+  "scripts": {
+    "test": "node --test tests/portineria.test.mjs",
+    "validate": "claude plugin validate . --strict && claude plugin validate ./plugins/portineria --strict"
+  },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}

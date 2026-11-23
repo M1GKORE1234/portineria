@@ -1,0 +1,16 @@
+{
+  "name": "kore-plugins",
+  "owner": {
+    "name": "Alessio Kore"
+  },
+  "description": "Plugin per Claude Code di Alessio Kore",
+  "plugins": [
+    {
+      "name": "portineria",
+      "source": "./plugins/portineria",
+      "description": "Risponde in locale, a 0 token, alle domande che non hanno bisogno di Claude. Tutto il resto passa a Claude come sempre.",
+      "category": "productivity",
+      "tags": ["token", "risparmio", "cost", "hooks", "italiano"]
+    }
+  ]
+}

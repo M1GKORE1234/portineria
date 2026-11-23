@@ -1,0 +1,17 @@
+{
+  "description": "Portineria: risponde in locale (0 token) alle domande che non hanno bisogno di Claude",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/portineria.mjs"],
+            "timeout": 45
+          }
+        ]
+      }
+    ]
+  }
+}
